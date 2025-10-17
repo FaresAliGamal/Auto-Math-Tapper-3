@@ -1,0 +1,64 @@
+name: Build Android (ZIP project)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK (cmdline-tools)
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --version
+          yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          yes | sdkmanager --licenses
+
+      - name: Unzip project
+        run: |
+          unzip -q QuickMathTapper-visual-ROI.zip -d .
+          ls -la
+          test -d QuickMathTapper-visual-ROI || (echo "Project dir missing!" && exit 1)
+
+      - name: Prepare gradle + properties
+        working-directory: QuickMathTapper-visual-ROI
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          {
+            echo "android.useAndroidX=true"
+            echo "android.enableJetifier=true"
+            echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
+            echo "org.gradle.workers.max=2"
+          } >> gradle.properties
+
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 8.7
+            chmod +x gradlew
+          fi
+          chmod +x gradlew
+
+      - name: Build Debug APK
+        working-directory: QuickMathTapper-visual-ROI
+        run: |
+          ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickMathTapper-visual-ROI-debug
+          path: QuickMathTapper-visual-ROI/app/build/outputs/apk/debug/*.apk
